@@ -53,7 +53,7 @@ export default function Home() {
         <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
       </div>
       <div className="flex flex-row gap-4 justify-center h-10">
-        <BGSelector uid={1} children={undefined} className={""} />
+        <BGSelector uid={1} />
         <button
           onClick={() => {
             if (isConnected) {

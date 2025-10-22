@@ -55,8 +55,8 @@ class Streamer:
         self.__pcs = {}
         self.__app = web.Application()
         if debug: self.__app.router.add_get("/", lambda r: self.index())
-        self.__app.router.add_get("/available_bgs", lambda r: self.get_bgs(r))
-        self.__app.router.add_get("/bgs/{id}", lambda r: self.get_bg(r))
+        self.__app.router.add_post("/available_bgs", lambda r: self.get_bgs(r))
+        self.__app.router.add_post("/bgs", lambda r: self.set_bg(r))
         self.__app.router.add_post("/offer", lambda r: self.process_offer(r))
         web.run_app(self.__app, port=5000)
 
@@ -220,7 +220,7 @@ class Streamer:
             {"id": bg.id, "img": self.__encode_img(bg.img)} for bg in bg_list
         ])
     
-    async def get_bg(self, r: web.Request) -> web.Response:
+    async def set_bg(self, r: web.Request) -> web.Response:
         query = await r.json()
         try:
             id = int(query["bgid"])
@@ -230,7 +230,12 @@ class Streamer:
             uid = int(query["uid"])
         except KeyError:
             return web.HTTPBadRequest(reason="Missing 'uid' query parameters")
-        return web.Response(content_type="text/plain", text="Not implemented yet")
+        if uid not in self.__processors:
+            self.__processors[uid] = self.__Procssor(uid)
+        success = self.__processors[uid].set_bg(id)
+        if not success:
+            return web.HTTPBadRequest(reason="Failed to set background")
+        return web.Response(content_type="text/plain", text="OK")
     
     async def process_offer(self, r: web.Request):
         params = await r.json()
@@ -283,11 +288,18 @@ class Streamer:
 # Example
 if __name__ == "__main__":
     class EmptyProcessor(ProcessorABC):
+        __bg_id: int
         def __init__(self, uid: int):
             super().__init__(uid)
-        
+            self.__bg_id = 0
         def process_image(self, img: cv2.typing.MatLike) -> cv2.typing.MatLike:
-            return cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)[1]
+            # return cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)[1]
+            if self.__bg_id == 1:
+                return cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)[1]
+            elif self.__bg_id == 2:
+                return cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)[1]
+            else:
+                return img
 
         def set_bg(self, bg_id: int) -> bool:
             if not (bg_id == 1 or bg_id == 2): return False

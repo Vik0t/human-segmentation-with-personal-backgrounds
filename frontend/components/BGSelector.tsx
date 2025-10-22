@@ -4,7 +4,7 @@ import { Dialog } from "@base-ui-components/react"
 import { useEffect, useState, useTransition } from "react"
 import { getBGs, setBG } from "@/actions/APIFetcher"
 
-export default function BGSelector({uid, children, className}:{uid:number, children: React.ReactNode, className:string}) {
+export default function BGSelector({uid}:{uid:number}) {
   const [selectedBG, setSelectedBG] = useState<BGData | null>(null)
   const [isPending, startTransition] = useTransition()
   useEffect(() => {
@@ -16,8 +16,8 @@ export default function BGSelector({uid, children, className}:{uid:number, child
 
   return (
     <Dialog.Root>
-      <Dialog.Trigger className={className}>
-        {children}
+      <Dialog.Trigger className="flex h-10 items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-3.5 text-base font-medium text-gray-900 select-none hover:bg-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-blue-800 active:bg-gray-100">
+        Select Background
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 min-h-dvh bg-black opacity-20 transition-all duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 dark:opacity-70 supports-[-webkit-touch-callout:none]:absolute" />
@@ -43,7 +43,6 @@ function BGList({
   const refresh = () => {
     startTransition(async () => {
       const bgs = await getBGs(uid)
-      if (!bgs) return
       setBgs(bgs)
     })
   }

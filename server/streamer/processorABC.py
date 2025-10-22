@@ -10,6 +10,7 @@ class BGData:
 
 class ProcessorABC(ABC):
     uid: int
+    __bg_id: int
 
     def __init__(self, uid: int):
         self.uid = uid
@@ -17,6 +18,9 @@ class ProcessorABC(ABC):
     @abstractmethod
     def process_image(self, img: cv2.typing.MatLike) -> cv2.typing.MatLike:
         ...
+    @property
+    def bg_id(self) -> int:
+        return self.__bg_id
     
     @abstractmethod
     def set_bg(self, bg_id: int) -> bool: 

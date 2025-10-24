@@ -25,3 +25,7 @@ class ProcessorABC(ABC):
     @abstractmethod
     def get_bg_list(self) -> list[BGData]:
         ...
+    
+    @abstractmethod
+    def receive_config(self, config: dict) -> bool:
+        ...

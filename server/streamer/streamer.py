@@ -58,7 +58,7 @@ class Streamer:
         self.__app.router.add_post("/available_bgs", lambda r: self.get_bgs(r))
         self.__app.router.add_post("/bgs", lambda r: self.set_bg(r))
         self.__app.router.add_post("/offer", lambda r: self.process_offer(r))
-        web.run_app(self.__app, port=5000)
+        web.run_app(self.__app, port=5050)
 
     def __encode_img(self, img: cv2.typing.MatLike) -> str:
         _, buffer = cv2.imencode(".jpg", img)

@@ -45,8 +45,9 @@ class MattingNetwork(nn.Module):
                 r4: Optional[Tensor] = None,
                 downsample_ratio: float = 1,
                 segmentation_pass: bool = False):
-        
         if downsample_ratio != 1:
+            if torch.is_tensor(downsample_ratio):
+                downsample_ratio = float(downsample_ratio.item())
             src_sm = self._interpolate(src, scale_factor=downsample_ratio)
         else:
             src_sm = src

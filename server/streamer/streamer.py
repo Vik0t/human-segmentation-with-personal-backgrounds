@@ -53,6 +53,7 @@ class Streamer:
         self.__app.router.add_post("/available_bgs", lambda r: self.get_bgs(r))
         self.__app.router.add_post("/bgs", lambda r: self.set_bg(r))
         self.__app.router.add_post("/offer", lambda r: self.process_offer(r))
+        self.__app.router.add_post("/config", lambda r: self.receive_config(r))
         web.run_app(self.__app, port=5000)
 
     def __encode_img(self, img: cv2.typing.MatLike) -> str:
@@ -88,6 +89,20 @@ class Streamer:
         success = self.__processors[uid].set_bg(id)
         if not success:
             return web.HTTPBadRequest(reason="Failed to set background")
+        return web.Response(content_type="text/plain", text="OK")
+    
+    async def receive_config(self, r: web.Request) -> web.Response:
+        print("Receiving config")
+        query = await r.json()
+        try:
+            uid = int(query["uid"])
+        except KeyError:
+            return web.HTTPBadRequest(reason="Missing 'uid' query parameters")
+        if uid not in self.__processors:
+            self.__processors[uid] = self.__Procssor(uid)
+        success = self.__processors[uid].receive_config(query["config"])
+        if not success:
+            return web.HTTPBadRequest(reason="Failed to receive config")
         return web.Response(content_type="text/plain", text="OK")
 
     async def process_offer(self, r: web.Request):
@@ -157,6 +172,9 @@ if __name__ == "__main__":
             if not (bg_id == 1 or bg_id == 2):
                 return False
             self.__bg_id = bg_id
+            return True
+
+        def receive_config(self, config: dict) -> bool:
             return True
 
         def get_bg_list(self) -> list[BGData]:

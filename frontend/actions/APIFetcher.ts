@@ -11,12 +11,12 @@ export async function getBGs(uid: number) {
     body: JSON.stringify({ uid }),
   })
   if (!response.ok) {
-    throw new Error("Failed to fetch BGs")
+    return false
   }
   const data = await response.json()
   const result = BGData.array().safeParse(data)
   if (!result.success) {
-    throw new Error("Failed to parse BGs")
+    return false
   }
   return result.data
 }
@@ -30,15 +30,16 @@ export async function setBG(uid: number, bgid: number) {
     body: JSON.stringify({ uid, bgid }),
   })
   if (!response.ok) {
-    throw new Error("Failed to fetch BG")
+    return false
   }
   if (!response.ok) {
-    throw new Error("Failed to set BG")
+    return false
   }
   return true
 }
 
 export async function start(uid: number, sdp: string, type: string) {
+  try{
   const response = await fetch(`${process.env.PROCESSING_API_IP}/offer`, {
     method: "POST",
     headers: {
@@ -47,7 +48,24 @@ export async function start(uid: number, sdp: string, type: string) {
     body: JSON.stringify({ uid, sdp, type }),
   })
   if (!response.ok) {
-    throw new Error("Failed to start")
+    return null
+    }
+    return await response.json()
+  } catch (error) {
+    return null
   }
-  return await response.json()
+}
+
+export async function SendjsonConfig(uid: number, config: string) {
+  const response = await fetch(`${process.env.PROCESSING_API_IP}/config`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ uid, config }),
+  })
+  if (!response.ok) {
+    return false
+  }
+  return true
 }

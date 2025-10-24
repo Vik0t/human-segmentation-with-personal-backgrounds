@@ -11,7 +11,7 @@ import os
 # CONFIGURATION
 # ======================
 DEVICE = 'mps' if torch.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu'
-MODEL_PATH = '/Users/vik0t/hackatons/human-segment/segmentation/RobustVideoMatting/rvm_mobilenetv3.pth'
+MODEL_PATH = f'{os.path.dirname(os.path.abspath(__file__))}/RobustVideoMatting/rvm_mobilenetv3.pth'
 BG_PATH = "segmentation/image.png"
 OUTPUT_WIDTH, OUTPUT_HEIGHT = 1280, 720
 DOWNSAMPLE_RATIO = 0.25
@@ -136,13 +136,19 @@ with torch.no_grad():
             cv2.putText(grid, f"FPS: {fps:.1f} | DEBUG MODE", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
             cv2.imshow('Debug Grid', grid)
-            cv2.destroyWindow('Output')
+            try: # this is to avoid errors when the window is not open
+                cv2.destroyWindow('Output')
+            except:
+                pass
         else:
             mode_text = "Enhanced Matting" if should_enhance else "Direct Matting"
             cv2.putText(output_bgr, f"FPS: {fps:.1f} | {mode_text}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             cv2.imshow('Output', output_bgr)
-            cv2.destroyWindow('Debug Grid')
+            try:
+                cv2.destroyWindow('Debug Grid')
+            except:
+                pass
 
         # --- FPS & Controls ---
         elapsed = time.time() - start_time

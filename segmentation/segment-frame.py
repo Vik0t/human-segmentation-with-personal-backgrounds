@@ -159,48 +159,48 @@ def enhance_zero_dce(frame_rgb, model, device, max_side=ZERO_DCE_MAX_SIDE):
         enhanced = cv2.resize(enhanced, (w,h), interpolation=cv2.INTER_LINEAR)
     return enhanced
 
+if __name__ == "__main__":
+    DEVICE = 'mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu'
 
-DEVICE = 'mps' if torch.backends.mps.is_available() else 'cuda' if torch.cuda.is_available() else 'cpu'
+    # Load RVM
+    from RobustVideoMatting.model import MattingNetwork
+    model_rvm = MattingNetwork('mobilenetv3').eval().to(DEVICE)
+    state = torch.load(MODEL_PATH, map_location=DEVICE)
+    if any(k.startswith('module.') for k in state.keys()):
+        state = {k.replace('module.',''):v for k,v in state.items()}
+    model_rvm.load_state_dict(state)
 
-# Load RVM
-from RobustVideoMatting.model import MattingNetwork
-model_rvm = MattingNetwork('mobilenetv3').eval().to(DEVICE)
-state = torch.load(MODEL_PATH, map_location=DEVICE)
-if any(k.startswith('module.') for k in state.keys()):
-    state = {k.replace('module.',''):v for k,v in state.items()}
-model_rvm.load_state_dict(state)
+    # Optionally load Zero-DCE++
+    model_dce = load_zero_dce('models/zero_dce++.pth', DEVICE)  # reuse your function
 
-# Optionally load Zero-DCE++
-model_dce = load_zero_dce('models/zero_dce++.pth', DEVICE)  # reuse your function
+    # Load background
+    bg_rgb = np.array(Image.open("image.png").convert("RGB").resize((1280, 720)))
 
-# Load background
-bg_rgb = np.array(Image.open("image.png").convert("RGB").resize((1280, 720)))
+    rec = [None] * 4
+    cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-rec = [None] * 4
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    while True:
+        ret, frame_bgr = cap.read()
+        if not ret: break
 
-while True:
-    ret, frame_bgr = cap.read()
-    if not ret: break
+        out_bgr, rec, alpha = segment_and_composite(
+            frame_bgr=frame_bgr,
+            bg_rgb=bg_rgb,
+            model_rvm=model_rvm,
+            rec_states=rec,
+            device=DEVICE,
+            model_dce=model_dce,
+            enhance_method='zero_dce',  # or 'clahe_gamma' or 'none'
+            brightness_threshold=60,
+            rvm_input_scale=0.5,
+            downsample_ratio=0.25
+        )
 
-    out_bgr, rec, alpha = segment_and_composite(
-        frame_bgr=frame_bgr,
-        bg_rgb=bg_rgb,
-        model_rvm=model_rvm,
-        rec_states=rec,
-        device=DEVICE,
-        model_dce=model_dce,
-        enhance_method='zero_dce',  # or 'clahe_gamma' or 'none'
-        brightness_threshold=60,
-        rvm_input_scale=0.5,
-        downsample_ratio=0.25
-    )
+        cv2.imshow('Result', out_bgr)
+        if cv2.waitKey(1) == ord('q'):
+            break
 
-    cv2.imshow('Result', out_bgr)
-    if cv2.waitKey(1) == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()

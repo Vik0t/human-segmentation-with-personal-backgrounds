@@ -11,12 +11,12 @@ export async function getBGs(uid: number) {
     body: JSON.stringify({ uid }),
   })
   if (!response.ok) {
-    return false
+    return null
   }
   const data = await response.json()
   const result = BGData.array().safeParse(data)
   if (!result.success) {
-    return false
+    return null
   }
   return result.data
 }

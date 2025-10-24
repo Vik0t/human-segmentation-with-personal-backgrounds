@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@base-ui-components/react": "1.0.0-beta.4",
+    "@tensorflow/tfjs": "^4.22.0",
     "next": "16.0.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",

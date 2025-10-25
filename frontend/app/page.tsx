@@ -148,12 +148,6 @@ function HomeContent() {
 
   return (
     <div className="h-full w-full flex flex-col items-center justify-center gap-4 bg-gray-900 p-8">
-      <button
-        onClick={handleStartStream}
-        className="absolute top-0 left-0 z-10"
-      >
-        tmp
-      </button>
       <div className="h-full w-full bg-gray-800 rounded-lg overflow-hidden relative">
         {!isLoaded && (
           <button
@@ -191,7 +185,7 @@ function HomeContent() {
                     d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                Начать трансляцию
+                Запустить сегментацию
               </>
             ) : (
               <>
@@ -336,7 +330,7 @@ function HomeContent() {
                 d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
               />
             </svg>
-            Остановка трансляции
+            Остановить сегментацию
           </button>
         </div>
       </div>

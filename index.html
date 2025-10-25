@@ -1,8 +1,14 @@
 <html>
 <head>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.7.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
     <script>
         let model, webcam;
+        let backgrounds = [];
+        let selectedBackgroundIndex = -1;
+        let employeeData = {};
+        let segmentationRunning = false;
+        let qrImages = {};
 
         async function loadModel() {
             model = await tf.loadGraphModel('model/model.json');
@@ -15,78 +21,162 @@
             webcam = await tf.data.webcam(video);
         }
 
-        // Enhanced segmentation and background replacement
-        async function segmentFrameWithBackground(img, backgroundImg) {
-            
-            const src = tf.tidy(() => img.expandDims(0).div(255)); // normalize input
+        function updateBackgroundSelector() {
+            const list = document.getElementById('bg-list');
+            list.innerHTML = '';
+            backgrounds.forEach((bg, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.text = `Background ${index + 1}`;
+                list.appendChild(option);
+            });
+            if (selectedBackgroundIndex === -1 && backgrounds.length > 0) selectedBackgroundIndex = 0;
+        }
 
-            // Initialize dummy recurrent states
-            const [r1i, r2i, r3i, r4i] = [tf.zeros([1, 1, 1, 1]), tf.zeros([1, 1, 1, 1]), tf.zeros([1, 1, 1, 1]), tf.zeros([1, 1, 1, 1])];
+        function handleJSONInput(jsonStr) {
+            try {
+                employeeData = JSON.parse(jsonStr);
+                generateQRImages(); // pre-generate QR codes
+            } catch(e) {
+                alert("Invalid JSON!");
+            }
+        }
+
+        function drawEmployeeInfo(ctx) {
+            if (!employeeData.employee) return;
+
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 2;
+
+            const lines = [];
+            const emp = employeeData.employee;
+            lines.push(`Name: ${emp.full_name}`);
+            lines.push(`Position: ${emp.position}`);
+            if (emp.company) lines.push(`Company: ${emp.company}`);
+            if (emp.department) lines.push(`Department: ${emp.department}`);
+            if (emp.office_location) lines.push(`Office: ${emp.office_location}`);
+
+            lines.forEach((line, i) => {
+                ctx.strokeText(line, 10, 30 + i * 20);
+                ctx.fillText(line, 10, 30 + i * 20);
+            });
+        }
+
+        function drawQRCodes(ctx) {
+            const size = 80;
+            let x = ctx.canvas.width - size - 10;
+            let y = 10;
+
+            if (qrImages.email) { ctx.drawImage(qrImages.email, x, y, size, size); y += size + 10; }
+            if (qrImages.telegram) { ctx.drawImage(qrImages.telegram, x, y, size, size); }
+        }
+
+       async function generateQRImages() {
+    qrImages = {};
+    if (!employeeData.employee) return;
+
+    const emp = employeeData.employee;
+    const size = 80;
+
+    const primary = emp.branding?.corporate_colors?.primary || "#0052CC";
+    const secondary = emp.branding?.corporate_colors?.secondary || "#0088D9";
+
+    // Email QR
+    if (emp.contact && emp.contact.email) {
+        const emailDataURL = await QRCode.toDataURL(emp.contact.email, { 
+            width: size,
+            color: {
+                dark: primary,
+                light: secondary
+            }
+        });
+        const img = new Image();
+        img.src = emailDataURL;
+        await new Promise(res => img.onload = res);
+        qrImages.email = img;
+    }
+
+    // Telegram QR
+    if (emp.contact && emp.contact.telegram) {
+        const tgUsername = emp.contact.telegram.replace('@','');
+        const tgURL = `https://t.me/${tgUsername}`;
+        const tgDataURL = await QRCode.toDataURL(tgURL, {
+            width: size,
+            color: {
+                dark: primary,
+                light: secondary
+            }
+        });
+        const img = new Image();
+        img.src = tgDataURL;
+        await new Promise(res => img.onload = res);
+        qrImages.telegram = img;
+    }
+}
+
+
+        async function segmentFrameWithBackground(img, bgImg) {
+            const src = tf.tidy(() => img.expandDims(0).div(255));
+            const [r1i, r2i, r3i, r4i] = [tf.zeros([1,1,1,1]), tf.zeros([1,1,1,1]), tf.zeros([1,1,1,1]), tf.zeros([1,1,1,1])];
             const downsample_ratio = tf.scalar(0.5);
 
-            // Run model
-            const [fgr, pha] = await model.executeAsync(
-                { src, r1i, r2i, r3i, r4i, downsample_ratio },
-                ['fgr', 'pha']
-            );
+            const [fgr, pha] = await model.executeAsync({src, r1i, r2i, r3i, r4i, downsample_ratio}, ['fgr','pha']);
 
-            // Prepare background tensor (resized to webcam frame)
-            const bgTensor = tf.tidy(() => {
-                const bg = tf.browser.fromPixels(backgroundImg)
-                    .resizeBilinear([480, 640])
-                    .div(255);
-                return bg.expandDims(0);
-            });
+            const bgTensor = tf.tidy(() => tf.browser.fromPixels(bgImg).resizeBilinear([480,640]).div(255).expandDims(0));
+            const phaUpscaled = tf.tidy(() => tf.clipByValue(tf.avgPool(tf.image.resizeBilinear(pha,[480,640],true),[5,5],[1,1],'same'),0,1));
 
-            // ✅ Enhance mask (pha)
-            const phaUpscaled = tf.tidy(() => {
-                // 1. Upscale to input resolution
-                let up = tf.image.resizeBilinear(pha, [480, 640], true);
-                // 2. Smooth with average pooling (acts like blur)
-                up = tf.avgPool(up, [5, 5], [1, 1], 'same');
-                // 3. Keep it in range [0,1]
-                return tf.clipByValue(up, 0, 1);
-            });
+            const composited = tf.tidy(() => fgr.resizeBilinear([480,640]).mul(phaUpscaled.tile([1,1,1,3])).add(bgTensor.mul(tf.sub(1, phaUpscaled.tile([1,1,1,3])))).squeeze());
 
-            // Composite foreground with new background
-            const composited = tf.tidy(() => {
-                const pha3 = phaUpscaled.tile([1, 1, 1, 3]); // repeat alpha for RGB
-                return fgr.resizeBilinear([480, 640])
-                    .mul(pha3)
-                    .add(bgTensor.mul(tf.sub(1, pha3)))
-                    .squeeze();
-            });
-
-            // Draw composited result
             const canvas = document.querySelector('canvas');
             await tf.browser.toPixels(composited, canvas);
 
-            // Cleanup
+            const ctx = canvas.getContext('2d');
+            drawEmployeeInfo(ctx);
+            drawQRCodes(ctx);
+
             tf.dispose([img, src, fgr, pha, bgTensor, composited, phaUpscaled]);
+        }
+
+        async function startSegmentationLoop() {
+            if (selectedBackgroundIndex < 0) return;
+            const frame = await webcam.capture();
+            await segmentFrameWithBackground(frame, backgrounds[selectedBackgroundIndex]);
+            frame.dispose();
+            requestAnimationFrame(startSegmentationLoop);
         }
 
         async function main() {
             await loadModel();
             await setupWebcam();
 
-            const bgInput = document.getElementById('bg-input');
-            const btn = document.getElementById('segment-btn');
-
-            let backgroundImage = null;
-            bgInput.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                const img = new Image();
-                img.onload = () => (backgroundImage = img);
-                img.src = URL.createObjectURL(file);
+            document.getElementById('bg-upload').addEventListener('change', (e) => {
+                for (const file of e.target.files) {
+                    const img = new Image();
+                    img.onload = () => { 
+                        backgrounds.push(img); 
+                        updateBackgroundSelector(); 
+                        if (selectedBackgroundIndex === -1) selectedBackgroundIndex = 0;
+                    };
+                    img.src = URL.createObjectURL(file);
+                }
             });
 
-            btn.addEventListener('click', async () => {
-                if (!backgroundImage) {
-                    alert('Please select a background image first.');
-                    return;
-                }
-                const img = await webcam.capture();
-                await segmentFrameWithBackground(img, backgroundImage);
+            document.getElementById('bg-list').addEventListener('change', (e) => {
+                selectedBackgroundIndex = parseInt(e.target.value);
+            });
+
+            document.getElementById('segment-btn').addEventListener('click', () => {
+                if (segmentationRunning) return;
+                if (selectedBackgroundIndex < 0) { alert("Select a background first"); return; }
+                segmentationRunning = true;
+                startSegmentationLoop();
+            });
+
+            document.getElementById('json-btn').addEventListener('click', () => {
+                const jsonStr = document.getElementById('json-input').value;
+                handleJSONInput(jsonStr);
             });
         }
 
@@ -94,10 +184,17 @@
     </script>
 </head>
 <body>
-    <h3>Webcam Background Segmentation (Enhanced Smooth Mask)</h3>
+    <h3>Webcam Segmentation with Employee Info & QR Codes</h3>
     <video autoplay playsinline></video><br>
-    <input type="file" id="bg-input" accept="image/*">
-    <button id="segment-btn">Segment and Apply Background</button><br>
-    <canvas></canvas>
+
+    <input type="file" id="bg-upload" accept="image/*" multiple>
+    <select id="bg-list"><option value="-1">Select Background</option></select>
+    <button id="segment-btn">Start Segmentation</button><br>
+
+    <canvas width="640" height="480"></canvas>
+
+    <h3>Employee JSON Input</h3>
+    <textarea id="json-input" rows="10" cols="50" placeholder='Paste employee JSON here'></textarea><br>
+    <button id="json-btn">Load Employee Data</button>
 </body>
 </html>

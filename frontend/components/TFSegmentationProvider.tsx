@@ -1,4 +1,5 @@
 "use client";
+import { getUniqueBG } from "@/actions/APIFetcher";
 import * as tf from "@tensorflow/tfjs";
 import {
   GraphModel,
@@ -18,13 +19,14 @@ import {
 } from "react";
 
 interface TFSegmentationContextType {
+  fpsRef: RefObject<HTMLParagraphElement | null>;
   srcVideoref: RefObject<HTMLVideoElement | null>;
   canvasref: RefObject<HTMLCanvasElement | null>;
   isLoaded: boolean;
   start: () => Promise<void>;
   stop: () => void;
   setBG: (bg: string) => void;
-  setJSONConfig: (jsonConfig: string) => void;
+  handleJsonUpload: (jsonConfig: string) => Promise<1 | null>;
   registerErrorHandler: (handler: (error: Error) => void) => void;
   unregisterErrorHandler: (handler: (error: Error) => void) => void;
 }
@@ -54,6 +56,8 @@ export default function TFSegmentationProvider({
   const [isLoaded, setIsLoaded] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [jsonConfig, setJSONConfig] = useState<string | null>(null);
+  const fpsRef = useRef<HTMLParagraphElement | null>(null);
+  const lastTimeRef = useRef<number | null>(null);
   const errorHandlersRef = useRef<((error: Error) => void)[]>([]);
   const stoppedRef = useRef(true);
   const modelref = useRef<GraphModel | null>(null);
@@ -105,12 +109,21 @@ export default function TFSegmentationProvider({
         ?.clearRect(0, 0, canvasref.current.width, canvasref.current.height);
       return;
     }
+    const currentTime = performance.now();
+    if (lastTimeRef.current) {
+      const deltaTime = currentTime - lastTimeRef.current;
+      if (fpsRef.current) {
+        fpsRef.current.innerText = `FPS: ${(1000 / deltaTime).toFixed(2)}`;
+      }
+    }
+    lastTimeRef.current = currentTime;
     if (!isLoaded) setIsLoaded(true);
     nextFrameref.current = requestAnimationFrame(draw);
   };
 
   const start = async () => {
     if (isStarted || !srcVideoref.current || !canvasref.current) return;
+    lastTimeRef.current = performance.now();
     stoppedRef.current = false;
     setIsStarted(true);
     console.log("starting tf segmentation");
@@ -156,16 +169,42 @@ export default function TFSegmentationProvider({
       (h: (error: Error) => void) => h !== handler
     );
   };
+
+  const handleJsonUpload = async (jsonData: string) => {
+    const srcImg = backgroundImgref.current;
+
+    // Convert the loaded image to base64 string
+    if (!srcImg) return null;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) {
+      return null;
+    }
+    canvas.width = srcImg.naturalWidth;
+    canvas.height = srcImg.naturalHeight;
+    ctx.drawImage(srcImg, 0, 0);
+    const base64String = canvas.toDataURL("image/png");
+    const uniqueBG = await getUniqueBG(base64String, jsonData);
+    if (!uniqueBG) return null;
+    const uniqueBGImg = new Image();
+    uniqueBGImg.src = URL.createObjectURL(uniqueBG);
+    uniqueBGImg.onload = () => {
+      backgroundImgref.current = uniqueBGImg;
+    };
+    return 1;
+  };
   return (
     <TFSegmentationProviderContext
       value={{
+        fpsRef,
         srcVideoref,
         canvasref,
         isLoaded,
         start,
         stop,
         setBG,
-        setJSONConfig,
+        handleJsonUpload,
         registerErrorHandler,
         unregisterErrorHandler,
       }}

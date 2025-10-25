@@ -4,7 +4,6 @@ import BGSelector from "@/components/BGSelector";
 import TFSegmentationProvider, {
   useTFSegmentation,
 } from "@/components/TFSegmentationProvider";
-import twclsx from "@/utils/twClassMerge";
 import { Toast } from "@base-ui-components/react";
 import { useEffect, useRef, useTransition, useState } from "react";
 
@@ -89,11 +88,13 @@ function ToastList() {
 
 function HomeContent() {
   const [isPending, startTransition] = useTransition();
+  const [isPendingJsonUpload, startTransitionJsonUpload] = useTransition();
   const {
+    fpsRef,
     isLoaded,
     canvasref,
     srcVideoref,
-    setJSONConfig,
+    handleJsonUpload,
     setBG,
     start,
     stop,
@@ -118,16 +119,27 @@ function HomeContent() {
     };
   }, []);
 
-  const handleJsonUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleJsonUploadLocal = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (file && file.type === "application/json") {
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const content = e.target?.result as string;
-          const parsedData = JSON.parse(content);
-          setJSONConfig(parsedData);
-          setJsonData(parsedData);
+          startTransitionJsonUpload(async () => {
+            const result = await handleJsonUpload(content);
+            if (!result) {
+              toast.add({
+                title: "Error occured while uploading JSON",
+                description: "Please check your JSON file and try again",
+              });
+              return;
+            }
+            const parsedData = JSON.parse(content);
+            setJsonData(parsedData);
+          });
           console.log("JSON файл загружен и сохранен:", file.name);
         } catch (error) {
           console.error("Ошибка парсинга JSON:", error);
@@ -202,6 +214,14 @@ function HomeContent() {
           ref={canvasref}
           className="w-full h-full object-cover transition-opacity"
         />
+        {isLoaded && (
+          <p
+            ref={fpsRef}
+            className="absolute top-5 right-5 text-white text-sm bg-gray-500 rounded-lg p-2"
+          >
+            FPS: 0
+          </p>
+        )}
         <video
           ref={srcVideoref}
           autoPlay
@@ -229,10 +249,14 @@ function HomeContent() {
         {/* Левая верхняя кнопка - импорт JSON */}
         <div className="flex-1">
           <div
-            className="flex flex-col items-center justify-center w-full h-24
-          bg-blue-600 text-white rounded-3xl hover:bg-blue-700 transition-all
-          duration-200 font-bold cursor-pointer shadow-2xl border-2
-          border-blue-500 text-lg"
+            className={`flex flex-col items-center justify-center w-full h-24
+              bg-blue-600 text-white rounded-3xl hover:bg-blue-700 transition-all
+              duration-200 font-bold cursor-pointer shadow-2xl border-2
+              border-blue-500 text-lg ${
+                isPendingJsonUpload || !isLoaded
+                  ? "bg-gray-600 hover:bg-gray-600 text-gray-400 border-gray-500"
+                  : "bg-blue-600 hover:bg-blue-700 text-white border-blue-500"
+              }`}
           >
             <label className="flex items-center justify-center gap-4 w-full">
               <svg
@@ -253,13 +277,19 @@ function HomeContent() {
               <input
                 type="file"
                 accept=".json"
-                onChange={handleJsonUpload}
+                onChange={handleJsonUploadLocal}
                 className="hidden"
+                disabled={isPendingJsonUpload || !isLoaded}
               />
             </label>
             {jsonData && (
               <div className="text-center text-gray-300 text-lg font-medium">
                 Файл загружен
+              </div>
+            )}
+            {isPendingJsonUpload && (
+              <div className="text-center text-gray-300 text-lg font-medium">
+                Загрузка...
               </div>
             )}
           </div>

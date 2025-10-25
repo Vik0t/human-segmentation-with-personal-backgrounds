@@ -1,3 +1,4 @@
+
 <html>
 <head>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.7.0/dist/tf.min.js"></script>
@@ -11,6 +12,11 @@
         let segmentationRunning = false;
         let qrImages = {};
         let r1i, r2i, r3i, r4i;
+        let fps = 0;
+
+        
+        const WIDTH = 1280;
+        const HEIGHT = 720;
 
         function resetRVMState() {
             r1i = tf.zeros([1, 1, 1, 1]);
@@ -18,7 +24,7 @@
             r3i = tf.zeros([1, 1, 1, 1]);
             r4i = tf.zeros([1, 1, 1, 1]);
         }
-        // 1️⃣ Force WebGL backend
+
         async function setupBackend() {
             await tf.setBackend('webgl');
             await tf.ready();
@@ -31,9 +37,9 @@
 
         async function setupWebcam() {
             const video = document.querySelector('video');
-            video.width = 640;
-            video.height = 480;
-            webcam = await tf.data.webcam(video);
+            video.width = WIDTH;
+            video.height = HEIGHT;
+            webcam = await tf.data.webcam(video, { resizeWidth: WIDTH, resizeHeight: HEIGHT });
         }
 
         function updateBackgroundSelector() {
@@ -91,13 +97,12 @@
         function handleJSONInput(jsonStr) {
             try {
                 const parsed = JSON.parse(jsonStr);
-                // Убедись, что структура правильная
                 if (!parsed.employee) {
                     alert("JSON must contain 'employee' field!");
                     return;
                 }
                 employeeData = parsed;
-                uploadGeneratedBackground(employeeData); // ← объект, не строка!
+                uploadGeneratedBackground(employeeData);
                 generateQRImages();
             } catch(e) {
                 alert("Invalid JSON!");
@@ -114,8 +119,7 @@
             const primary = emp.branding?.corporate_colors?.primary || "#0052CC";
             const secondary = emp.branding?.corporate_colors?.secondary || "#0088D9";
 
-            // Email QR
-            if (emp.contact && emp.contact.email) {
+            if (emp.contact?.email) {
                 const emailDataURL = await QRCode.toDataURL(emp.contact.email, { 
                     width: size,
                     color: { dark: primary, light: secondary }
@@ -126,8 +130,7 @@
                 qrImages.email = img;
             }
 
-            // Telegram QR
-            if (emp.contact && emp.contact.telegram) {
+            if (emp.contact?.telegram) {
                 const tgUsername = emp.contact.telegram.replace('@','');
                 const tgURL = `https://t.me/${tgUsername}`;
                 const tgDataURL = await QRCode.toDataURL(tgURL, {
@@ -143,7 +146,7 @@
 
         function drawEmployeeInfo(ctx) {
             if (!employeeData.employee) return;
-            ctx.font = "16px Arial";
+            ctx.font = "20px Arial";
             ctx.fillStyle = "#ffffff";
             ctx.strokeStyle = "#000000";
             ctx.lineWidth = 2;
@@ -158,14 +161,14 @@
             ].filter(Boolean);
 
             lines.forEach((line, i) => {
-                ctx.strokeText(line, 10, 30 + i * 20);
-                ctx.fillText(line, 10, 30 + i * 20);
+                ctx.strokeText(line, 10, 30 + i * 24);
+                ctx.fillText(line, 10, 30 + i * 24);
             });
         }
 
         function drawQRCodes(ctx) {
             const size = 80;
-            let x = ctx.canvas.width - size - 10;
+            let x = WIDTH - size - 10;
             let y = 10;
 
             if (qrImages.email) { ctx.drawImage(qrImages.email, x, y, size, size); y += size + 10; }
@@ -175,52 +178,63 @@
         async function preprocessBackgrounds() {
             bgTensors.forEach(t => t.dispose());
             bgTensors = backgrounds.map(bgImg =>
-                tf.tidy(() => tf.browser.fromPixels(bgImg).resizeBilinear([480,640]).div(255).expandDims(0))
+                tf.tidy(() => tf.browser.fromPixels(bgImg).resizeBilinear([HEIGHT, WIDTH]).div(255).expandDims(0))
             );
         }
 
         async function segmentFrameWithBackground(img, bgTensor) {
-            const src = tf.tidy(() => img.div(255).expandDims(0));
-            const downsample_ratio = tf.scalar(0.5);
+    // Normalize frame
+    const src = tf.tidy(() => img.div(255).expandDims(0));
+    const downsample_ratio = tf.scalar(0.5);
 
-            // Выполняем модель с 6 выходами
-            const outputs = await model.executeAsync(
-                { src, r1i, r2i, r3i, r4i, downsample_ratio },
-                ['fgr', 'pha', 'r1o', 'r2o', 'r3o', 'r4o']
-            );
+    // Run the model async
+    const outputs = await model.executeAsync(
+        { src, r1i, r2i, r3i, r4i, downsample_ratio },
+        ['fgr', 'pha', 'r1o', 'r2o', 'r3o', 'r4o']
+    );
 
-            const [fgr, pha, r1o, r2o, r3o, r4o] = outputs;
+    const [fgr, pha, r1o, r2o, r3o, r4o] = outputs;
 
-            // Обновляем состояния для следующего кадра
-            tf.dispose([r1i, r2i, r3i, r4i]);
-            [r1i, r2i, r3i, r4i] = [r1o, r2o, r3o, r4o];
+    // Dispose previous states
+    [r1i, r2i, r3i, r4i].forEach(t => t.dispose());
+    [r1i, r2i, r3i, r4i] = [r1o, r2o, r3o, r4o];
 
-            // Композитинг
-            const composited = tf.tidy(() => {
-                const phaUpscaled = tf.image.resizeBilinear(pha, [480, 640], true);
-                return fgr.resizeBilinear([480, 640])
-                    .mul(phaUpscaled.tile([1, 1, 1, 3]))
-                    .add(bgTensor.mul(tf.sub(1, phaUpscaled.tile([1, 1, 1, 3]))))
-                    .squeeze();
-            });
+    // Compositing (synchronous, wrap in tidy)
+    const composited = tf.tidy(() => {
+        const phaUpscaled = tf.image.resizeBilinear(pha, [HEIGHT, WIDTH], true);
+        return fgr.resizeBilinear([HEIGHT, WIDTH])
+            .mul(phaUpscaled.tile([1,1,1,3]))
+            .add(bgTensor.mul(tf.sub(1, phaUpscaled.tile([1,1,1,3]))))
+            .squeeze();
+    });
 
-            const canvas = document.querySelector('canvas');
-            await tf.browser.toPixels(composited, canvas);
+    // Draw to canvas
+    await tf.browser.toPixels(composited, document.querySelector('canvas'));
 
-            //const ctx = canvas.getContext('2d');
-            // drawEmployeeInfo(ctx);
-            //drawQRCodes(ctx);
+    // Dispose temporary tensors
+    tf.dispose([src, fgr, pha, composited, downsample_ratio]);
+}
 
-            // Очистка
-            tf.dispose([src, fgr, pha, composited, downsample_ratio]);
+        function displayFPSLatency(fpsValue, latency) {
+            const statsDiv = document.getElementById('stats');
+            statsDiv.innerText = `FPS: ${fpsValue.toFixed(1)} | Latency: ${latency.toFixed(1)} ms`;
         }
 
         async function startSegmentationLoop() {
-            if (selectedBackgroundIndex < 0) return;
+            if (!segmentationRunning || selectedBackgroundIndex < 0) return;
+
+            const t0 = performance.now();
+
             const frame = await webcam.capture();
             const bgTensor = bgTensors[selectedBackgroundIndex];
             await segmentFrameWithBackground(frame, bgTensor);
             frame.dispose();
+
+            const t1 = performance.now();
+            const latency = t1 - t0;
+            fps = 1000 / latency;
+            displayFPSLatency(fps, latency);
+
             requestAnimationFrame(startSegmentationLoop);
         }
 
@@ -237,11 +251,10 @@
                         backgrounds.push(img); 
                         updateBackgroundSelector(); 
                         if (selectedBackgroundIndex === -1) selectedBackgroundIndex = 0;
+                        preprocessBackgrounds();
                     };
                     img.src = URL.createObjectURL(file);
                 }
-                // preprocess after loading backgrounds
-                setTimeout(preprocessBackgrounds, 500);
             });
 
             document.getElementById('bg-list').addEventListener('change', (e) => {
@@ -251,7 +264,7 @@
             document.getElementById('segment-btn').addEventListener('click', () => {
                 if (segmentationRunning) return;
                 if (selectedBackgroundIndex < 0) { alert("Select a background first"); return; }
-                resetRVMState(); // ← сброс при каждом старте
+                resetRVMState();
                 segmentationRunning = true;
                 startSegmentationLoop();
             });
@@ -273,7 +286,10 @@
     <select id="bg-list"><option value="-1">Select Background</option></select>
     <button id="segment-btn">Start Segmentation</button><br>
 
-    <canvas width="640" height="480"></canvas>
+    <canvas width="1280" height="720"></canvas>
+    <div id="stats" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.5); padding:5px; font-family:Arial; z-index:1000;">
+        FPS: 0 | Latency: 0 ms
+    </div>
 
     <h3>Employee JSON Input</h3>
     <textarea id="json-input" rows="10" cols="50" placeholder='Paste employee JSON here'></textarea><br>

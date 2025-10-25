@@ -18,15 +18,22 @@ export async function getBGs(uid: number): Promise<BGData[] | null> {
 
 export async function getUniqueBG(
   srcImg: string,
-  employeeData: string
+  employeeData: {[key: string]: string}
 ): Promise<Blob | null> {
+
+        const payload = {
+            employee: employeeData,
+            background_base64: srcImg
+        }
+        console.log(JSON.stringify(payload))
   try {
-    const result = await fetch("http://localhost:5000/generate_background", {
+    const result = await fetch("http://localhost:8000/generate_background", {
       method: "POST",
-      body: JSON.stringify({
-        background_base64: srcImg,
-        employee: employeeData,
-      }),
+      headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+      
     });
     if (!result.ok) {
       return null;

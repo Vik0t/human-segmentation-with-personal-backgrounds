@@ -26,7 +26,7 @@ interface TFSegmentationContextType {
   start: () => Promise<void>;
   stop: () => void;
   setBG: (bg: string) => void;
-  handleJsonUpload: (jsonConfig: string) => Promise<1 | null>;
+  handleJsonUpload: (jsonConfig: {[key: string]: string}) => Promise<1 | null>;
   registerErrorHandler: (handler: (error: Error) => void) => void;
   unregisterErrorHandler: (handler: (error: Error) => void) => void;
 }
@@ -55,7 +55,6 @@ export default function TFSegmentationProvider({
   const canvasref = useRef<HTMLCanvasElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
-  const [jsonConfig, setJSONConfig] = useState<string | null>(null);
   const fpsRef = useRef<HTMLParagraphElement | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const errorHandlersRef = useRef<((error: Error) => void)[]>([]);
@@ -170,7 +169,7 @@ export default function TFSegmentationProvider({
     );
   };
 
-  const handleJsonUpload = async (jsonData: string) => {
+  const handleJsonUpload = async (jsonData: {[key: string]: string}) => {
     const srcImg = backgroundImgref.current;
 
     // Convert the loaded image to base64 string
@@ -184,12 +183,13 @@ export default function TFSegmentationProvider({
     canvas.width = srcImg.naturalWidth;
     canvas.height = srcImg.naturalHeight;
     ctx.drawImage(srcImg, 0, 0);
-    const base64String = canvas.toDataURL("image/png");
+    const base64String = canvas.toDataURL("image/jpeg");
     const uniqueBG = await getUniqueBG(base64String, jsonData);
     if (!uniqueBG) return null;
     const uniqueBGImg = new Image();
     uniqueBGImg.src = URL.createObjectURL(uniqueBG);
     uniqueBGImg.onload = () => {
+      console.log("Loaded genrated bg")
       backgroundImgref.current = uniqueBGImg;
     };
     return 1;

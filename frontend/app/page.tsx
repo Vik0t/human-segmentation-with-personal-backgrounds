@@ -129,7 +129,8 @@ function HomeContent() {
         try {
           const content = e.target?.result as string;
           startTransitionJsonUpload(async () => {
-            const result = await handleJsonUpload(content);
+            const parsedData = JSON.parse(content);
+            const result = await handleJsonUpload(parsedData);
             if (!result) {
               toast.add({
                 title: "Error occured while uploading JSON",
@@ -137,7 +138,6 @@ function HomeContent() {
               });
               return;
             }
-            const parsedData = JSON.parse(content);
             setJsonData(parsedData);
           });
           console.log("JSON файл загружен и сохранен:", file.name);
@@ -157,11 +157,6 @@ function HomeContent() {
   const handleStopStream = () => {
     stop();
   };
-
-  const handleStopStream = () => {
-    closeOffer()
-    videoRef.current!.srcObject = null
-  }
   return (
     <div className="h-full w-full flex flex-col items-center justify-center gap-4 bg-gray-900 p-8">
       <div className="h-full w-full bg-gray-800 rounded-lg overflow-hidden relative">
@@ -262,7 +257,7 @@ function HomeContent() {
                     d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                Начать трансляцию
+                
               </>
             ) : (
               <>
@@ -416,23 +411,4 @@ export default function Home() {
       </Toast.Provider>
     </TFSegmentationProvider>
   );
-}
-
-// Главный компонент Home должен быть последним
-export default function Home() {
-  return (
-    <WebRTCProvider>
-      <Toast.Provider>
-        <HomeContent />
-        <Toast.Portal>
-          <Toast.Viewport
-            className="fixed z-10 top-auto right-4 bottom-4
-          mx-auto flex w-[250px] sm:right-8 sm:bottom-8 sm:w-[300px]"
-          >
-            <ToastList />
-          </Toast.Viewport>
-        </Toast.Portal>
-      </Toast.Provider>
-    </WebRTCProvider>
-  )
 }

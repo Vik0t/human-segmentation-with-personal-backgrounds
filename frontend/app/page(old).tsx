@@ -1,12 +1,9 @@
-"use client";
+"use client"
 
-import BGSelector from "@/components/BGSelector";
-import TFSegmentationProvider, {
-  useTFSegmentation,
-} from "@/components/TFSegmentationProvider";
-import twclsx from "@/utils/twClassMerge";
-import { Toast } from "@base-ui-components/react";
-import { useEffect, useRef, useTransition, useState } from "react";
+import BGSelector from "@/components/BGSelector"
+import WebRTCProvider, { useWebRTC } from "@/components/WebRTCProvider"
+import { Toast } from "@base-ui-components/react"
+import { useEffect, useRef, useTransition, useState } from "react"
 
 // Сначала объявляем все вспомогательные компоненты
 
@@ -27,11 +24,11 @@ function XIcon(props: React.ComponentProps<"svg">) {
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
     </svg>
-  );
+  )
 }
 
 function ToastList() {
-  const { toasts } = Toast.useToastManager();
+  const { toasts } = Toast.useToastManager()
   return toasts.map((toast) => (
     <Toast.Root
       key={toast.id}
@@ -84,78 +81,73 @@ function ToastList() {
         </Toast.Close>
       </Toast.Content>
     </Toast.Root>
-  ));
+  ))
 }
 
 function HomeContent() {
-  const [isPending, startTransition] = useTransition();
-  const {
-    isLoaded,
-    canvasref,
-    srcVideoref,
-    setJSONConfig,
-    setBG,
-    start,
-    stop,
-    registerErrorHandler,
-    unregisterErrorHandler,
-  } = useTFSegmentation();
-  const [jsonData, setJsonData] = useState<any>(null);
-  const [isPreviewHidden, setIsPreviewHidden] = useState(true);
-  const toast = Toast.useToastManager();
+  const [isPending, startTransition] = useTransition()
+  const { videoStreams, isConnected, openOffer, closeOffer, registerErrorHandler, unregisterErrorHandler } = useWebRTC()
+  const [jsonData, setJsonData] = useState<any>(null)
+
+  const toast = Toast.useToastManager()
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    if (videoStreams.length > 0 && videoRef.current) {
+      videoRef.current.srcObject = videoStreams[0]
+    }
+  }, [videoStreams])
 
   const errorHandler = (error: Error) => {
     toast.add({
       title: "Error occured while starting videostream",
       description: error.message,
-    });
-  };
+    })
+  }
 
   useEffect(() => {
-    registerErrorHandler(errorHandler);
+    registerErrorHandler(errorHandler)
     return () => {
-      unregisterErrorHandler(errorHandler);
-    };
-  }, []);
+      unregisterErrorHandler(errorHandler)
+    }
+  }, [])
 
   const handleJsonUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const file = event.target.files?.[0]
     if (file && file.type === "application/json") {
-      const reader = new FileReader();
+      const reader = new FileReader()
       reader.onload = (e) => {
         try {
-          const content = e.target?.result as string;
-          const parsedData = JSON.parse(content);
-          setJSONConfig(parsedData);
-          setJsonData(parsedData);
-          console.log("JSON файл загружен и сохранен:", file.name);
+          const content = e.target?.result as string
+          const parsedData = JSON.parse(content)
+          setJsonData(parsedData)
+          console.log("JSON файл загружен и сохранен:", file.name)
         } catch (error) {
-          console.error("Ошибка парсинга JSON:", error);
-          alert("Неверный формат JSON файла!");
+          console.error("Ошибка парсинга JSON:", error)
+          alert("Неверный формат JSON файла!")
         }
-      };
-      reader.readAsText(file);
+      }
+      reader.readAsText(file)
     }
-  };
+  }
 
   const handleStartStream = () => {
-    startTransition(start);
-  };
+    startTransition(() => {
+      openOffer()
+    })
+  }
 
   const handleStopStream = () => {
-    stop();
-  };
-
+    closeOffer()
+    videoRef.current!.srcObject = null
+  }
   return (
     <div className="h-full w-full flex flex-col items-center justify-center gap-4 bg-gray-900 p-8">
-      <button
-        onClick={handleStartStream}
-        className="absolute top-0 left-0 z-10"
-      >
+      <button onClick={() => handleStartStream()} className="absolute top-0 left-0 z-10">
         tmp
       </button>
       <div className="h-full w-full bg-gray-800 rounded-lg overflow-hidden relative">
-        {!isLoaded && (
+        {!isConnected && (
           <button
             onClick={handleStartStream}
             className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center gap-6 w-8/10 h-48
@@ -167,16 +159,11 @@ function HomeContent() {
                  : "bg-blue-600 hover:bg-blue-700 text-white border-blue-500"
              }
           }`}
-            disabled={isPending || isLoaded}
+            disabled={isPending || isConnected}
           >
             {!isPending ? (
               <>
-                <svg
-                  className="w-12 h-12"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -204,32 +191,7 @@ function HomeContent() {
             )}
           </button>
         )}
-        <canvas
-          ref={canvasref}
-          className="w-full h-full object-cover transition-opacity"
-        />
-        <video
-          ref={srcVideoref}
-          autoPlay
-          playsInline
-          onClick={() => {
-            setIsPreviewHidden(true);
-          }}
-          className={`absolute w-1/3 aspect-auto top-5 left-5 object-cover border-2 border-gray-300 rounded-lg ${
-            isLoaded && !isPreviewHidden ? "block" : "hidden"
-          }`}
-        />
-
-        {isPreviewHidden && isLoaded && (
-          <button
-            onClick={() => {
-              setIsPreviewHidden(false);
-            }}
-            className="absolute top-5 left-5 w-15 h-15 bg-gray-500 opacity-50 text-white text-center flex items-center justify-center font-bold rounded-lg"
-          >
-            Show
-          </button>
-        )}
+        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
       </div>
       <div className="flex flex-row gap-12 w-full max-w-6xl">
         {/* Левая верхняя кнопка - импорт JSON */}
@@ -241,12 +203,7 @@ function HomeContent() {
           border-blue-500 text-lg"
           >
             <label className="flex items-center justify-center gap-4 w-full">
-              <svg
-                className="w-12 h-12"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -256,18 +213,9 @@ function HomeContent() {
                 />
               </svg>
               Импорт JSON
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleJsonUpload}
-                className="hidden"
-              />
+              <input type="file" accept=".json" onChange={handleJsonUpload} className="hidden" />
             </label>
-            {jsonData && (
-              <div className="text-center text-gray-300 text-lg font-medium">
-                Файл загружен
-              </div>
-            )}
+            {jsonData && <div className="text-center text-gray-300 text-lg font-medium">Файл загружен</div>}
           </div>
         </div>
 
@@ -278,18 +226,10 @@ function HomeContent() {
             className="flex flex-col items-center justify-center w-full h-24
           bg-blue-600 text-white rounded-3xl shadow-2xl border-2 border-blue-500
           hover:bg-blue-700 transition-all duration-200"
-            onBackgroundSelected={(bg) => {
-              setBG(bg.img);
-            }}
           >
             {/* Заголовок "Выбрать фон" */}
             <div className="flex items-center justify-center gap-4">
-              <svg
-                className="w-12 h-12"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+              <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -307,7 +247,7 @@ function HomeContent() {
         </div>
         <div
           className={`flex-1 overflow-hidden transition-all ${
-            isLoaded ? "max-w-full opacity-100" : "max-w-0 opacity-0"
+            isConnected ? "max-w-full opacity-100" : "max-w-0 opacity-0"
           }`}
         >
           <button
@@ -317,12 +257,7 @@ function HomeContent() {
                   bg-red-600 hover:bg-red-700 text-white border-red-400
               hover:shadow-3xl border-2 text-lg`}
           >
-            <svg
-              className="w-12 h-12"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -341,13 +276,13 @@ function HomeContent() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 // Главный компонент Home должен быть последним
 export default function Home() {
   return (
-    <TFSegmentationProvider>
+    <WebRTCProvider>
       <Toast.Provider>
         <HomeContent />
         <Toast.Portal>
@@ -359,6 +294,6 @@ export default function Home() {
           </Toast.Viewport>
         </Toast.Portal>
       </Toast.Provider>
-    </TFSegmentationProvider>
-  );
+    </WebRTCProvider>
+  )
 }

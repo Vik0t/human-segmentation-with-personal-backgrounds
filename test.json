@@ -1,0 +1,22 @@
+{
+  "employee": {
+    "full_name": "John Doe",
+    "position": "Software Engineer",
+    "company": "TechCorp Inc.",
+    "department": "R&D",
+    "office_location": "New York HQ",
+    "contact": {
+      "email": "john.doe@techcorp.com",
+      "telegram": "@johndoe"
+    },
+    "branding": {
+      "logo_url": "https://example.com/logo.png",
+      "corporate_colors": {
+        "primary": "#0052CC",
+        "secondary": "#0088D9"
+      },
+      "slogan": "Innovating the Future"
+    },
+    "privacy_level": "medium"
+  }
+}

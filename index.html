@@ -1,0 +1,103 @@
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.7.0/dist/tf.min.js"></script>
+    <script>
+        let model, webcam;
+
+        async function loadModel() {
+            model = await tf.loadGraphModel('model/model.json');
+        }
+
+        async function setupWebcam() {
+            const video = document.querySelector('video');
+            video.width = 640;
+            video.height = 480;
+            webcam = await tf.data.webcam(video);
+        }
+
+        // Enhanced segmentation and background replacement
+        async function segmentFrameWithBackground(img, backgroundImg) {
+            
+            const src = tf.tidy(() => img.expandDims(0).div(255)); // normalize input
+
+            // Initialize dummy recurrent states
+            const [r1i, r2i, r3i, r4i] = [tf.zeros([1, 1, 1, 1]), tf.zeros([1, 1, 1, 1]), tf.zeros([1, 1, 1, 1]), tf.zeros([1, 1, 1, 1])];
+            const downsample_ratio = tf.scalar(0.5);
+
+            // Run model
+            const [fgr, pha] = await model.executeAsync(
+                { src, r1i, r2i, r3i, r4i, downsample_ratio },
+                ['fgr', 'pha']
+            );
+
+            // Prepare background tensor (resized to webcam frame)
+            const bgTensor = tf.tidy(() => {
+                const bg = tf.browser.fromPixels(backgroundImg)
+                    .resizeBilinear([480, 640])
+                    .div(255);
+                return bg.expandDims(0);
+            });
+
+            // ✅ Enhance mask (pha)
+            const phaUpscaled = tf.tidy(() => {
+                // 1. Upscale to input resolution
+                let up = tf.image.resizeBilinear(pha, [480, 640], true);
+                // 2. Smooth with average pooling (acts like blur)
+                up = tf.avgPool(up, [5, 5], [1, 1], 'same');
+                // 3. Keep it in range [0,1]
+                return tf.clipByValue(up, 0, 1);
+            });
+
+            // Composite foreground with new background
+            const composited = tf.tidy(() => {
+                const pha3 = phaUpscaled.tile([1, 1, 1, 3]); // repeat alpha for RGB
+                return fgr.resizeBilinear([480, 640])
+                    .mul(pha3)
+                    .add(bgTensor.mul(tf.sub(1, pha3)))
+                    .squeeze();
+            });
+
+            // Draw composited result
+            const canvas = document.querySelector('canvas');
+            await tf.browser.toPixels(composited, canvas);
+
+            // Cleanup
+            tf.dispose([img, src, fgr, pha, bgTensor, composited, phaUpscaled]);
+        }
+
+        async function main() {
+            await loadModel();
+            await setupWebcam();
+
+            const bgInput = document.getElementById('bg-input');
+            const btn = document.getElementById('segment-btn');
+
+            let backgroundImage = null;
+            bgInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                const img = new Image();
+                img.onload = () => (backgroundImage = img);
+                img.src = URL.createObjectURL(file);
+            });
+
+            btn.addEventListener('click', async () => {
+                if (!backgroundImage) {
+                    alert('Please select a background image first.');
+                    return;
+                }
+                const img = await webcam.capture();
+                await segmentFrameWithBackground(img, backgroundImage);
+            });
+        }
+
+        window.addEventListener('load', main);
+    </script>
+</head>
+<body>
+    <h3>Webcam Background Segmentation (Enhanced Smooth Mask)</h3>
+    <video autoplay playsinline></video><br>
+    <input type="file" id="bg-input" accept="image/*">
+    <button id="segment-btn">Segment and Apply Background</button><br>
+    <canvas></canvas>
+</body>
+</html>

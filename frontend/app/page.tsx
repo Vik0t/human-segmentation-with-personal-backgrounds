@@ -158,6 +158,10 @@ function HomeContent() {
     stop();
   };
 
+  const handleStopStream = () => {
+    closeOffer()
+    videoRef.current!.srcObject = null
+  }
   return (
     <div className="h-full w-full flex flex-col items-center justify-center gap-4 bg-gray-900 p-8">
       <div className="h-full w-full bg-gray-800 rounded-lg overflow-hidden relative">
@@ -241,7 +245,34 @@ function HomeContent() {
             }}
             className="absolute top-5 left-5 w-15 h-15 bg-gray-500 opacity-50 text-white text-center flex items-center justify-center font-bold rounded-lg"
           >
-            Show
+            {!isPending ? (
+              <>
+                <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0
+                001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                Начать трансляцию
+              </>
+            ) : (
+              <>
+                <div
+                  className="animate-spin rounded-full h-12 w-12 border-b-2
+                border-white"
+                ></div>
+                Загрузка...
+              </>
+            )}
           </button>
         )}
       </div>
@@ -385,4 +416,23 @@ export default function Home() {
       </Toast.Provider>
     </TFSegmentationProvider>
   );
+}
+
+// Главный компонент Home должен быть последним
+export default function Home() {
+  return (
+    <WebRTCProvider>
+      <Toast.Provider>
+        <HomeContent />
+        <Toast.Portal>
+          <Toast.Viewport
+            className="fixed z-10 top-auto right-4 bottom-4
+          mx-auto flex w-[250px] sm:right-8 sm:bottom-8 sm:w-[300px]"
+          >
+            <ToastList />
+          </Toast.Viewport>
+        </Toast.Portal>
+      </Toast.Provider>
+    </WebRTCProvider>
+  )
 }

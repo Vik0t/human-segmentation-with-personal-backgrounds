@@ -1,0 +1,298 @@
+
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.7.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script>
+        let model, webcam;
+        let backgrounds = [];
+        let bgTensors = [];
+        let selectedBackgroundIndex = -1;
+        let employeeData = {};
+        let segmentationRunning = false;
+        let qrImages = {};
+        let r1i, r2i, r3i, r4i;
+        let fps = 0;
+
+        
+        const WIDTH = 1280;
+        const HEIGHT = 720;
+
+        function resetRVMState() {
+            r1i = tf.zeros([1, 1, 1, 1]);
+            r2i = tf.zeros([1, 1, 1, 1]);
+            r3i = tf.zeros([1, 1, 1, 1]);
+            r4i = tf.zeros([1, 1, 1, 1]);
+        }
+
+        async function setupBackend() {
+            await tf.setBackend('webgl');
+            await tf.ready();
+            console.log('TF.js backend:', tf.getBackend());
+        }
+
+        async function loadModel() {
+            model = await tf.loadGraphModel('model/model.json');
+        }
+
+        async function setupWebcam() {
+            const video = document.querySelector('video');
+            video.width = WIDTH;
+            video.height = HEIGHT;
+            webcam = await tf.data.webcam(video, { resizeWidth: WIDTH, resizeHeight: HEIGHT });
+        }
+
+        function updateBackgroundSelector() {
+            const list = document.getElementById('bg-list');
+            list.innerHTML = '';
+            backgrounds.forEach((bg, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.text = `Background ${index + 1}`;
+                list.appendChild(option);
+            });
+            if (selectedBackgroundIndex === -1 && backgrounds.length > 0) selectedBackgroundIndex = 0;
+        }
+
+        async function uploadGeneratedBackground(jsonData) {
+            if (selectedBackgroundIndex < 0 || backgrounds.length === 0) {
+                alert("Выберите фон перед генерацией!");
+                return;
+            }
+
+            const bgCanvas = document.createElement('canvas');
+            const ctx = bgCanvas.getContext('2d');
+            const img = backgrounds[selectedBackgroundIndex];
+            bgCanvas.width = img.width;
+            bgCanvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            const bgBase64 = bgCanvas.toDataURL('image/jpeg');
+
+            try {
+                const response = await fetch('http://localhost:8000/generate_background', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        employee: jsonData.employee,
+                        background_base64: bgBase64
+                    })
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const blob = await response.blob();
+                const newImg = new Image();
+                newImg.onload = () => {
+                    backgrounds.push(newImg);
+                    updateBackgroundSelector();
+                    selectedBackgroundIndex = backgrounds.length - 1;
+                    preprocessBackgrounds();
+                };
+                newImg.src = URL.createObjectURL(blob);
+            } catch (e) {
+                console.error("Генерация фона:", e);
+                alert("Ошибка генерации");
+            }
+        }
+
+        function handleJSONInput(jsonStr) {
+            try {
+                const parsed = JSON.parse(jsonStr);
+                if (!parsed.employee) {
+                    alert("JSON must contain 'employee' field!");
+                    return;
+                }
+                employeeData = parsed;
+                uploadGeneratedBackground(employeeData);
+                generateQRImages();
+            } catch(e) {
+                alert("Invalid JSON!");
+                console.error(e);
+            }
+        }
+
+        async function generateQRImages() {
+            qrImages = {};
+            if (!employeeData.employee) return;
+
+            const emp = employeeData.employee;
+            const size = 80;
+            const primary = emp.branding?.corporate_colors?.primary || "#0052CC";
+            const secondary = emp.branding?.corporate_colors?.secondary || "#0088D9";
+
+            if (emp.contact?.email) {
+                const emailDataURL = await QRCode.toDataURL(emp.contact.email, { 
+                    width: size,
+                    color: { dark: primary, light: secondary }
+                });
+                const img = new Image();
+                img.src = emailDataURL;
+                await new Promise(res => img.onload = res);
+                qrImages.email = img;
+            }
+
+            if (emp.contact?.telegram) {
+                const tgUsername = emp.contact.telegram.replace('@','');
+                const tgURL = `https://t.me/${tgUsername}`;
+                const tgDataURL = await QRCode.toDataURL(tgURL, {
+                    width: size,
+                    color: { dark: primary, light: secondary }
+                });
+                const img = new Image();
+                img.src = tgDataURL;
+                await new Promise(res => img.onload = res);
+                qrImages.telegram = img;
+            }
+        }
+
+        function drawEmployeeInfo(ctx) {
+            if (!employeeData.employee) return;
+            ctx.font = "20px Arial";
+            ctx.fillStyle = "#ffffff";
+            ctx.strokeStyle = "#000000";
+            ctx.lineWidth = 2;
+
+            const emp = employeeData.employee;
+            const lines = [
+                `Name: ${emp.full_name}`,
+                `Position: ${emp.position}`,
+                emp.company ? `Company: ${emp.company}` : '',
+                emp.department ? `Department: ${emp.department}` : '',
+                emp.office_location ? `Office: ${emp.office_location}` : ''
+            ].filter(Boolean);
+
+            lines.forEach((line, i) => {
+                ctx.strokeText(line, 10, 30 + i * 24);
+                ctx.fillText(line, 10, 30 + i * 24);
+            });
+        }
+
+        function drawQRCodes(ctx) {
+            const size = 80;
+            let x = WIDTH - size - 10;
+            let y = 10;
+
+            if (qrImages.email) { ctx.drawImage(qrImages.email, x, y, size, size); y += size + 10; }
+            if (qrImages.telegram) { ctx.drawImage(qrImages.telegram, x, y, size, size); }
+        }
+
+        async function preprocessBackgrounds() {
+            bgTensors.forEach(t => t.dispose());
+            bgTensors = backgrounds.map(bgImg =>
+                tf.tidy(() => tf.browser.fromPixels(bgImg).resizeBilinear([HEIGHT, WIDTH]).div(255).expandDims(0))
+            );
+        }
+
+        async function segmentFrameWithBackground(img, bgTensor) {
+    // Normalize frame
+    const src = tf.tidy(() => img.div(255).expandDims(0));
+    const downsample_ratio = tf.scalar(0.5);
+
+    // Run the model async
+    const outputs = await model.executeAsync(
+        { src, r1i, r2i, r3i, r4i, downsample_ratio },
+        ['fgr', 'pha', 'r1o', 'r2o', 'r3o', 'r4o']
+    );
+
+    const [fgr, pha, r1o, r2o, r3o, r4o] = outputs;
+
+    // Dispose previous states
+    [r1i, r2i, r3i, r4i].forEach(t => t.dispose());
+    [r1i, r2i, r3i, r4i] = [r1o, r2o, r3o, r4o];
+
+    // Compositing (synchronous, wrap in tidy)
+    const composited = tf.tidy(() => {
+        const phaUpscaled = tf.image.resizeBilinear(pha, [HEIGHT, WIDTH], true);
+        return fgr.resizeBilinear([HEIGHT, WIDTH])
+            .mul(phaUpscaled.tile([1,1,1,3]))
+            .add(bgTensor.mul(tf.sub(1, phaUpscaled.tile([1,1,1,3]))))
+            .squeeze();
+    });
+
+    // Draw to canvas
+    await tf.browser.toPixels(composited, document.querySelector('canvas'));
+
+    // Dispose temporary tensors
+    tf.dispose([src, fgr, pha, composited, downsample_ratio]);
+}
+
+        function displayFPSLatency(fpsValue, latency) {
+            const statsDiv = document.getElementById('stats');
+            statsDiv.innerText = `FPS: ${fpsValue.toFixed(1)} | Latency: ${latency.toFixed(1)} ms`;
+        }
+
+        async function startSegmentationLoop() {
+            if (!segmentationRunning || selectedBackgroundIndex < 0) return;
+
+            const t0 = performance.now();
+
+            const frame = await webcam.capture();
+            const bgTensor = bgTensors[selectedBackgroundIndex];
+            await segmentFrameWithBackground(frame, bgTensor);
+            frame.dispose();
+
+            const t1 = performance.now();
+            const latency = t1 - t0;
+            fps = 1000 / latency;
+            displayFPSLatency(fps, latency);
+
+            requestAnimationFrame(startSegmentationLoop);
+        }
+
+        async function main() {
+            await setupBackend();
+            await loadModel();
+            await setupWebcam();
+            resetRVMState();
+
+            document.getElementById('bg-upload').addEventListener('change', async (e) => {
+                for (const file of e.target.files) {
+                    const img = new Image();
+                    img.onload = () => { 
+                        backgrounds.push(img); 
+                        updateBackgroundSelector(); 
+                        if (selectedBackgroundIndex === -1) selectedBackgroundIndex = 0;
+                        preprocessBackgrounds();
+                    };
+                    img.src = URL.createObjectURL(file);
+                }
+            });
+
+            document.getElementById('bg-list').addEventListener('change', (e) => {
+                selectedBackgroundIndex = parseInt(e.target.value);
+            });
+
+            document.getElementById('segment-btn').addEventListener('click', () => {
+                if (segmentationRunning) return;
+                if (selectedBackgroundIndex < 0) { alert("Select a background first"); return; }
+                resetRVMState();
+                segmentationRunning = true;
+                startSegmentationLoop();
+            });
+
+            document.getElementById('json-btn').addEventListener('click', () => {
+                const jsonStr = document.getElementById('json-input').value;
+                handleJSONInput(jsonStr);
+            });
+        }
+
+        window.addEventListener('load', main);
+    </script>
+</head>
+<body>
+    <h3>Webcam Segmentation with Employee Info & QR Codes</h3>
+    <video autoplay playsinline></video><br>
+
+    <input type="file" id="bg-upload" accept="image/*" multiple>
+    <select id="bg-list"><option value="-1">Select Background</option></select>
+    <button id="segment-btn">Start Segmentation</button><br>
+
+    <canvas width="1280" height="720"></canvas>
+    <div id="stats" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.5); padding:5px; font-family:Arial; z-index:1000;">
+        FPS: 0 | Latency: 0 ms
+    </div>
+
+    <h3>Employee JSON Input</h3>
+    <textarea id="json-input" rows="10" cols="50" placeholder='Paste employee JSON here'></textarea><br>
+    <button id="json-btn">Load Employee Data</button>
+</body>
+</html>

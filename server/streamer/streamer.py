@@ -116,7 +116,6 @@ class Streamer:
             uid = params["uid"]
         except KeyError:
             return web.HTTPBadRequest(reason="Missing 'uid' query parameters")
-
         if uid not in self.__processors:
             self.__processors[uid] = self.__Procssor(uid)
         video = VideoStreamTrackWithProcessor(self.__processors[uid])

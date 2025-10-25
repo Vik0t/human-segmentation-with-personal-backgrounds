@@ -1,71 +1,40 @@
-"use server"
+"use server";
 
-import { BGData } from "@/types/BGData"
+import { BGData } from "@/types/BGData";
 
-export async function getBGs(uid: number) {
-  const response = await fetch(`${process.env.PROCESSING_API_IP}/available_bgs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ uid }),
-  })
-  if (!response.ok) {
-    return null
-  }
-  const data = await response.json()
-  const result = BGData.array().safeParse(data)
+export async function getBGs(uid: number): Promise<BGData[] | null> {
+  const data = [
+    { id: 1, img: "bg1.png" },
+    { id: 2, img: "bg2.png" },
+    { id: 3, img: "bg3.png" },
+    { id: 4, img: "bg4.png" },
+  ]; // setting mock data instead of fetching
+  const result = BGData.array().safeParse(data);
   if (!result.success) {
-    return null
+    return null;
   }
-  return result.data
+  return result.data;
 }
 
-export async function setBG(uid: number, bgid: number) {
-  const response = await fetch(`${process.env.PROCESSING_API_IP}/bgs`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ uid, bgid }),
-  })
-  if (!response.ok) {
-    return false
-  }
-  if (!response.ok) {
-    return false
-  }
-  return true
-}
-
-export async function start(uid: number, sdp: string, type: string) {
-  try{
-  const response = await fetch(`${process.env.PROCESSING_API_IP}/offer`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ uid, sdp, type }),
-  })
-  if (!response.ok) {
-    return null
+export async function getUniqueBG(
+  srcImg: string,
+  employeeData: string
+): Promise<Blob | null> {
+  try {
+    const result = await fetch("http://localhost:5000/generate_background", {
+      method: "POST",
+      body: JSON.stringify({
+        background_base64: srcImg,
+        employee: employeeData,
+      }),
+    });
+    if (!result.ok) {
+      return null;
     }
-    return await response.json()
+    const data = await result.blob();
+    return data;
   } catch (error) {
-    return null
+    console.error("Error fetching unique background:", error);
+    return null;
   }
-}
-
-export async function SendjsonConfig(uid: number, config: string) {
-  const response = await fetch(`${process.env.PROCESSING_API_IP}/config`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ uid, config }),
-  })
-  if (!response.ok) {
-    return false
-  }
-  return true
 }
